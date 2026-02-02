@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AssetCommand | Portfolio</title>
+    <title>AssetCommand | Pro Edition</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
             --bg: #05070a; --card: #0d1117; --primary: #8257ff; --text: #f0f6fc; 
-            --border: #30363d; --accent: #00f2ff; --danger: #ff4d4d;
+            --border: #30363d; --accent: #00f2ff; --danger: #ff4d4d; --off: #444;
         }
 
         body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; padding-bottom: 220px; }
@@ -21,21 +21,29 @@
         
         h2 { color: var(--accent); font-size: 2.2rem; margin: 5px 0; }
 
-        .btn-group { display: flex; gap: 8px; }
+        .btn-group { display: flex; gap: 8px; align-items: center; }
         .btn-tool { background: var(--card); border: 1px solid var(--border); color: #8b949e; padding: 8px 12px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-size: 0.8rem; }
         .btn-tool:hover { border-color: var(--primary); color: white; }
+        .btn-danger { color: var(--danger); border-color: rgba(255,77,77,0.3); }
 
         .tab-container { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 10px; }
         .tab { padding: 8px 18px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; white-space: nowrap; color: #8b949e; }
         .tab.active { background: var(--primary); color: white; border-color: var(--primary); }
 
+        /* Table & Status UI */
         table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
         th { text-align: left; padding: 12px; font-size: 0.7rem; text-transform: uppercase; color: #8b949e; background: rgba(255,255,255,0.03); }
         td { padding: 12px; border-top: 1px solid var(--border); }
         
+        .row-off { opacity: 0.4; filter: grayscale(1); }
+        .status-btn { cursor: pointer; font-size: 1.1rem; transition: 0.2s; }
+        .status-on { color: var(--accent); }
+        .status-off { color: var(--off); }
+
         .inline-input { background: transparent; border: none; color: white; width: 100%; font-size: 0.9rem; outline: none; }
         input[type="month"]::-webkit-calendar-picker-indicator { display: none; }
 
+        /* Floating Input Bar */
         .input-bar { position: fixed; bottom: 25px; left: 50%; transform: translateX(-50%); background: #161b22; padding: 15px 25px; border-radius: 50px; border: 1px solid var(--primary); display: flex; gap: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); z-index: 100; }
         .input-bar input { background: #0d1117; border: 1px solid var(--border); border-radius: 20px; color: white; padding: 8px 15px; outline: none; width: 140px; }
         .btn-add { background: var(--primary); color: white; border: none; padding: 10px 25px; border-radius: 25px; font-weight: bold; cursor: pointer; }
@@ -43,7 +51,7 @@
         @media (max-width: 768px) {
             .stats-grid { grid-template-columns: 1fr; }
             thead { display: none; } 
-            tr { display: block; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--card); }
+            tr { display: block; margin-bottom: 15px; border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--card); position: relative; }
             td { display: flex; justify-content: space-between; align-items: center; border: none; padding: 8px 5px; }
             td::before { content: attr(data-label); font-size: 0.7rem; text-transform: uppercase; color: #8b949e; font-weight: bold; }
             .inline-input { text-align: right; width: 60%; }
@@ -58,6 +66,7 @@
     <div class="header">
         <h1>Asset<span style="color:var(--primary)">Command</span></h1>
         <div class="btn-group">
+            <button class="btn-tool btn-danger" id="bulk-del-btn" style="display:none" onclick="bulkDelete()"><i class="fas fa-trash-sweep"></i> Delete Selected</button>
             <button class="btn-tool" onclick="exportCSV()"><i class="fas fa-file-download"></i> Export</button>
             <button class="btn-tool" onclick="document.getElementById('csvIn').click()"><i class="fas fa-file-upload"></i> Import</button>
             <button class="btn-tool" onclick="cloneMonth()" id="clone-btn" style="display:none; color:var(--accent)"><i class="fas fa-copy"></i> Clone</button>
@@ -67,7 +76,7 @@
 
     <div class="stats-grid">
         <div class="glass-card">
-            <small id="stat-label">TOTAL FUNDS</small>
+            <small id="stat-label">TOTAL ACTIVE FUNDS</small>
             <h2 id="total-val">$0.00</h2>
         </div>
         <div class="glass-card"><canvas id="growthChart"></canvas></div>
@@ -78,7 +87,13 @@
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Institution</th><th>Month</th><th>Amount</th><th style="text-align:right">Action</th></tr>
+                <tr>
+                    <th style="width:30px"><input type="checkbox" id="master-check" onclick="toggleSelectAll(this)"></th>
+                    <th>Status</th>
+                    <th>Institution</th>
+                    <th>Month</th>
+                    <th>Amount</th>
+                </tr>
             </thead>
             <tbody id="table-body"></tbody>
         </table>
@@ -93,7 +108,7 @@
 </div>
 
 <script>
-    let db = JSON.parse(localStorage.getItem('asset_db_v18')) || [];
+    let db = JSON.parse(localStorage.getItem('asset_db_v19')) || [];
     let currentTab = 'Global';
     let myChart = null;
 
@@ -102,75 +117,105 @@
         const date = document.getElementById('f-date').value;
         const amt = parseFloat(document.getElementById('f-amt').value) || 0;
         if(!inst || !date) return;
-        db.push({ id: Date.now(), inst, date, amt });
+        db.push({ id: Date.now(), inst, date, amt, active: true });
         render();
         document.getElementById('f-inst').value = '';
         document.getElementById('f-amt').value = '';
     }
 
     function render() {
-        localStorage.setItem('asset_db_v18', JSON.stringify(db));
+        localStorage.setItem('asset_db_v19', JSON.stringify(db));
         const months = [...new Set(db.map(i => i.date))].sort();
         document.getElementById('tab-bar').innerHTML = ['Global', ...months].map(m => 
             `<div class="tab ${currentTab===m?'active':''}" onclick="setTab('${m}')">${m}</div>`).join('');
 
         const filtered = db.filter(i => currentTab === 'Global' || i.date === currentTab);
         document.getElementById('table-body').innerHTML = filtered.map(i => `
-            <tr>
+            <tr class="${i.active ? '' : 'row-off'}">
+                <td data-label="Select"><input type="checkbox" class="row-check" data-id="${i.id}" onchange="checkBulkStatus()"></td>
+                <td data-label="Status">
+                    <i class="fas fa-power-off status-btn ${i.active ? 'status-on' : 'status-off'}" 
+                       onclick="toggleStatus(${i.id})"></i>
+                </td>
                 <td data-label="Institution"><input class="inline-input" value="${i.inst}" onchange="update(${i.id},'inst',this.value)"></td>
                 <td data-label="Month"><input type="month" class="inline-input" value="${i.date}" onchange="update(${i.id},'date',this.value)"></td>
                 <td data-label="Amount"><input type="number" class="inline-input" value="${i.amt}" onchange="update(${i.id},'amt',this.value)"></td>
-                <td data-label="Action" style="text-align:right"><i class="fas fa-trash" onclick="del(${i.id})" style="color:var(--danger); cursor:pointer"></i></td>
             </tr>`).join('');
 
-        const total = filtered.reduce((s,i) => s + i.amt, 0);
+        // Calculate only ACTIVE items
+        const total = filtered.filter(i => i.active).reduce((s,i) => s + i.amt, 0);
         document.getElementById('total-val').innerText = `$${total.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('clone-btn').style.display = currentTab === 'Global' ? 'none' : 'block';
-
+        
+        checkBulkStatus();
         updateChartLogic();
+    }
+
+    function toggleStatus(id) {
+        db = db.map(i => i.id === id ? {...i, active: !i.active} : i);
+        render();
+    }
+
+    function toggleSelectAll(master) {
+        document.querySelectorAll('.row-check').forEach(c => c.checked = master.checked);
+        checkBulkStatus();
+    }
+
+    function checkBulkStatus() {
+        const checked = document.querySelectorAll('.row-check:checked');
+        document.getElementById('bulk-del-btn').style.display = checked.length > 0 ? 'block' : 'none';
+    }
+
+    function bulkDelete() {
+        if(!confirm("Delete selected items?")) return;
+        const selectedIds = Array.from(document.querySelectorAll('.row-check:checked')).map(c => parseFloat(c.dataset.id));
+        db = db.filter(i => !selectedIds.includes(i.id));
+        document.getElementById('master-check').checked = false;
+        render();
     }
 
     function setTab(t) { currentTab = t; render(); }
     function update(id, f, v) { db = db.map(i => i.id === id ? {...i, [f]: f==='amt'?parseFloat(v):v} : i); render(); }
-    function del(id) { if(confirm("Delete entry?")) { db = db.filter(i => i.id !== id); render(); } }
 
     function cloneMonth() {
         let [y, m] = currentTab.split('-').map(Number);
         m++; if(m>12){m=1; y++;}
         const next = `${y}-${String(m).padStart(2,'0')}`;
-        db.filter(i => i.date === currentTab).forEach(i => db.push({...i, id: Date.now()+Math.random(), date: next}));
+        // Only clone active items
+        db.filter(i => i.date === currentTab && i.active).forEach(i => {
+            db.push({...i, id: Date.now() + Math.random(), date: next});
+        });
         currentTab = next; render();
     }
 
     function exportCSV() {
-        let csv = "Institution,Date,Amount\n" + db.map(i => `"${i.inst}",${i.date},${i.amt}`).join('\n');
+        let csv = "Institution,Date,Amount,Active\n" + db.map(i => `"${i.inst}",${i.date},${i.amt},${i.active}`).join('\n');
         const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.setAttribute('href', url);
-        a.setAttribute('download', `AssetCommand_Backup_${new Date().toISOString().slice(0,10)}.csv`);
+        a.href = window.URL.createObjectURL(blob);
+        a.download = `AssetCommand_Export.csv`;
         a.click();
     }
 
     function importCSV(e) {
-        const file = e.target.files[0];
         const reader = new FileReader();
         reader.onload = (event) => {
             const lines = event.target.result.split('\n').slice(1);
             db = lines.filter(l => l.trim()).map(l => {
-                const [inst, date, amt] = l.split(',');
-                return { id: Date.now() + Math.random(), inst: inst.replace(/"/g, ''), date, amt: parseFloat(amt) || 0 };
+                const [inst, date, amt, active] = l.split(',');
+                return { id: Date.now() + Math.random(), inst: inst.replace(/"/g, ''), date, amt: parseFloat(amt) || 0, active: active.trim() === 'true' };
             });
             render();
         };
-        reader.readAsText(file);
+        reader.readAsText(e.target.files[0]);
     }
 
     function updateChartLogic() {
         const ctx = document.getElementById('growthChart').getContext('2d');
         if (myChart) myChart.destroy();
         const monthlyTotals = {};
-        db.forEach(item => { monthlyTotals[item.date] = (monthlyTotals[item.date] || 0) + item.amt; });
+        // Chart only shows ACTIVE totals per month
+        db.filter(i => i.active).forEach(item => { monthlyTotals[item.date] = (monthlyTotals[item.date] || 0) + item.amt; });
         const labels = Object.keys(monthlyTotals).sort();
         myChart = new Chart(ctx, {
             type: 'line',
@@ -178,7 +223,7 @@
                 labels: labels,
                 datasets: [{ data: labels.map(l => monthlyTotals[l]), borderColor: '#8257ff', backgroundColor: 'rgba(130, 87, 255, 0.1)', fill: true, tension: 0.4 }]
             },
-            options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { display: false } }, y: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } } } }
+            options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e' } }, y: { ticks: { color: '#8b949e' } } } }
         });
     }
 
